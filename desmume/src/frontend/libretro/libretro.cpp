@@ -1691,9 +1691,72 @@ void retro_run (void)
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated)
    {
       check_variables(false);
+   }
+
+   poll_cb();
+
+   if (libretro_supports_bitmasks)
+      ret = input_cb(0, RETRO_DEVICE_JOYPAD,
+            0, RETRO_DEVICE_ID_JOYPAD_MASK);
+   else
+   {
+      unsigned i;
+      for (i = 0; i < RETRO_DEVICE_ID_JOYPAD_R3+1; i++)
+      {
+         if (input_cb(0, RETRO_DEVICE_JOYPAD, 0, i))
+            ret |= (1 << i);
+      }
+   }
+   
+   l_analog_x_ret = input_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+   l_analog_y_ret = input_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+   r_analog_x_ret = input_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
+   r_analog_y_ret = input_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
+
+   if((ret & (1 << RETRO_DEVICE_ID_JOYPAD_R3)) && delay_timer == 0)
+   {
+      switch (current_layout)
+      {
+         case LAYOUT_TOP_BOTTOM:
+            current_layout = LAYOUT_BOTTOM_TOP;
+            break;
+         case LAYOUT_BOTTOM_TOP:
+            current_layout = LAYOUT_LEFT_RIGHT;
+            break;
+         case LAYOUT_LEFT_RIGHT:
+            current_layout = LAYOUT_RIGHT_LEFT;
+            break;
+         case LAYOUT_RIGHT_LEFT:
+            current_layout = LAYOUT_TOP_ONLY;
+            break;
+         case LAYOUT_TOP_ONLY:
+            current_layout = LAYOUT_BOTTOM_ONLY;
+            break;
+         case LAYOUT_BOTTOM_ONLY:
+            current_layout = LAYOUT_HYBRID_TOP_ONLY;
+            break;
+         case LAYOUT_HYBRID_TOP_ONLY:
+            current_layout = LAYOUT_HYBRID_BOTTOM_ONLY;
+            break;
+         case LAYOUT_HYBRID_BOTTOM_ONLY:
+            current_layout = LAYOUT_TOP_BOTTOM;
+            break;
+      } // switch
+      delay_timer++;
+      updated = 1;
+   }
+
+   if(delay_timer != 0)
+   {
+      delay_timer++;
+      if(delay_timer == 30)
+         delay_timer = 0;
+   }
+
+   if (updated)
+   {
       struct retro_system_av_info new_av_info;
       retro_get_system_av_info(&new_av_info);
-
       /* Reinitialize the video if the layout is significantly different than previously set.
          This makes image uploads more efficient */
       if (current_max_width != 0 &&
@@ -1721,26 +1784,6 @@ void retro_run (void)
        current_max_width = layout.width;
        current_max_height = layout.height;
    }
-
-   poll_cb();
-
-   if (libretro_supports_bitmasks)
-      ret = input_cb(0, RETRO_DEVICE_JOYPAD,
-            0, RETRO_DEVICE_ID_JOYPAD_MASK);
-   else
-   {
-      unsigned i;
-      for (i = 0; i < RETRO_DEVICE_ID_JOYPAD_R3+1; i++)
-      {
-         if (input_cb(0, RETRO_DEVICE_JOYPAD, 0, i))
-            ret |= (1 << i);
-      }
-   }
-   
-   l_analog_x_ret = input_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
-   l_analog_y_ret = input_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
-   r_analog_x_ret = input_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
-   r_analog_y_ret = input_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
 
    if(pointer_device_l != 0 || pointer_device_r != 0)  // 1=emulated pointer, 2=absolute pointer, 3=absolute pointer constantly pressed
    {
@@ -2062,68 +2105,6 @@ void retro_run (void)
    // BUTTONS
    NDS_beginProcessingInput();
 
-   if((ret & (1 << RETRO_DEVICE_ID_JOYPAD_R3)) && delay_timer == 0)
-   {
-      switch (current_layout)
-      {
-         case LAYOUT_TOP_BOTTOM:
-            current_layout = LAYOUT_BOTTOM_TOP;
-            break;
-         case LAYOUT_BOTTOM_TOP:
-            current_layout = LAYOUT_TOP_BOTTOM;
-            break;
-         case LAYOUT_LEFT_RIGHT:
-            current_layout = LAYOUT_RIGHT_LEFT;
-            break;
-         case LAYOUT_RIGHT_LEFT:
-            current_layout = LAYOUT_LEFT_RIGHT;
-            break;
-         case LAYOUT_TOP_ONLY:
-            current_layout = LAYOUT_BOTTOM_ONLY;
-            break;
-         case LAYOUT_BOTTOM_ONLY:
-            current_layout = LAYOUT_TOP_ONLY;
-            break;
-         case LAYOUT_HYBRID_TOP_ONLY:
-            {
-               current_layout = LAYOUT_HYBRID_BOTTOM_ONLY;
-               //Need to swap around DST variables
-               uint16_t*swap = layout.dst;
-               layout.dst = layout.dst2;
-               layout.dst2 = swap;
-               //Need to reset Touch position to 0 with these conditions or it causes problems with mouse
-               if(hybrid_layout_scale == 1 && (!hybrid_layout_showbothscreens || !hybrid_cursor_always_smallscreen))
-               {
-                  TouchX = 0;
-                  TouchY = 0;
-               }
-               break;
-            }
-         case LAYOUT_HYBRID_BOTTOM_ONLY:
-            {
-               current_layout = LAYOUT_HYBRID_TOP_ONLY;
-               uint16_t*swap = layout.dst;
-               layout.dst = layout.dst2;
-               layout.dst2 = swap;
-               //Need to reset Touch position to 0 with these conditions are it causes problems with mouse
-               if(hybrid_layout_scale == 1 && (!hybrid_layout_showbothscreens || !hybrid_cursor_always_smallscreen))
-               {
-                  TouchX = 0;
-                  TouchY = 0;
-               }
-               break;
-            }
-      } // switch
-      delay_timer++;
-   }
-
-   if(delay_timer != 0)
-   {
-      delay_timer++;
-      if(delay_timer == 30)
-         delay_timer = 0;
-   }
-
    NDS_endProcessingInput();
 
    // RUN
@@ -2440,7 +2421,7 @@ bool retro_load_game(const struct retro_game_info *game)
    }
 #endif
 
-struct retro_input_descriptor desc[] = {
+  struct retro_input_descriptor desc[] = {
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down" },
@@ -2454,7 +2435,7 @@ struct retro_input_descriptor desc[] = {
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,     "Make Microphone Noise" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "R" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "Tap Stylus" },
-      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Quick Screen Switch" },
+      { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Layout Switch" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start" },
       { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT,  "Select" },
 
